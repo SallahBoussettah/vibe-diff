@@ -49,9 +49,15 @@ export function addChange(projectRoot: string, change: FileChange): void {
   );
 
   if (existingIdx >= 0) {
-    // Keep the FIRST oldContent (from the initial state), update newContent
+    // Always update newContent to latest
     session.changes[existingIdx].newContent = change.newContent;
     session.changes[existingIdx].timestamp = change.timestamp;
+    // Update oldContent ONLY if the incoming change has real old content
+    // and the existing entry has empty old content (was a create)
+    if (change.oldContent && !session.changes[existingIdx].oldContent) {
+      session.changes[existingIdx].oldContent = change.oldContent;
+      session.changes[existingIdx].editType = change.editType;
+    }
   } else {
     session.changes.push(change);
   }
