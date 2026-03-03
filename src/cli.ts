@@ -8,22 +8,24 @@ import { formatTerminal } from "./output/terminal";
 import { formatMarkdown, formatCommitMessage, formatPRDescription } from "./output/markdown";
 
 const HELP = `
-  vibe-diff — Semantic diffs in plain English
+  vibe-diff -- Semantic diffs in plain English
 
   Usage:
+    vibe-diff init            Auto-configure hooks in Claude Code settings
+    vibe-diff init --global   Configure in global ~/.claude/settings.json
     vibe-diff report          Show semantic diff of current session
     vibe-diff report --md     Output as markdown
     vibe-diff commit-msg      Generate a commit message from changes
     vibe-diff pr-desc         Generate a PR description from changes
     vibe-diff status          Show session status (how many changes tracked)
     vibe-diff clear           Clear the current session data
-    vibe-diff setup           Print Claude Code hook configuration
+    vibe-diff setup           Print hook configuration (manual setup)
     vibe-diff help            Show this help message
 
-  How it works:
-    1. Configure the PostToolUse hook (run 'vibe-diff setup')
-    2. Use Claude Code normally — VibeDiff tracks changes in the background
-    3. Run 'vibe-diff report' to see a semantic summary of all changes
+  Quick start:
+    1. Run 'vibe-diff init' (or 'npx vibe-diff init')
+    2. Restart Claude Code
+    3. Done. VibeDiff tracks changes and blocks on critical breaking changes.
 `;
 
 function main(): void {
@@ -47,6 +49,9 @@ function main(): void {
       break;
     case "clear":
       cmdClear(projectRoot);
+      break;
+    case "init":
+      cmdInit(args.includes("--global"));
       break;
     case "setup":
       cmdSetup();
@@ -112,6 +117,90 @@ function cmdStatus(projectRoot: string): void {
       console.log(`  ${icon} ${change.filePath}`);
     }
   }
+}
+
+function cmdInit(global: boolean): void {
+  const hooksDir = path.resolve(__dirname, "hooks").replace(/\\/g, "/");
+
+  const hookConfig = {
+    PreToolUse: [
+      {
+        matcher: "Edit|Write",
+        hooks: [
+          { type: "command", command: `node ${hooksDir}/pre-tool-use.js`, timeout: 5 },
+        ],
+      },
+    ],
+    PostToolUse: [
+      {
+        matcher: "Edit|Write",
+        hooks: [
+          { type: "command", command: `node ${hooksDir}/post-tool-use.js`, timeout: 10 },
+        ],
+      },
+    ],
+    Stop: [
+      {
+        hooks: [
+          { type: "command", command: `node ${hooksDir}/stop.js`, timeout: 30 },
+        ],
+      },
+    ],
+  };
+
+  // Determine target settings file
+  let settingsPath: string;
+  if (global) {
+    const home = process.env.HOME || process.env.USERPROFILE || "";
+    settingsPath = path.join(home, ".claude", "settings.json");
+  } else {
+    settingsPath = path.join(process.cwd(), ".claude", "settings.json");
+  }
+
+  // Read existing settings or create new
+  let settings: Record<string, unknown> = {};
+  try {
+    const dir = path.dirname(settingsPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    if (fs.existsSync(settingsPath)) {
+      settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+    }
+  } catch {
+    // Start fresh
+  }
+
+  // Merge hooks (don't overwrite existing non-VibeDiff hooks)
+  const existingHooks = (settings.hooks || {}) as Record<string, unknown[]>;
+
+  for (const [event, config] of Object.entries(hookConfig)) {
+    const existing = existingHooks[event] as Array<Record<string, unknown>> || [];
+    // Remove any previous VibeDiff hooks
+    const filtered = existing.filter((entry) => {
+      const hooks = (entry.hooks || []) as Array<Record<string, unknown>>;
+      return !hooks.some((h) => typeof h.command === "string" && (h.command as string).includes("vibe-diff"));
+    });
+    // Add new VibeDiff hooks
+    filtered.push(...(config as Record<string, unknown>[]));
+    existingHooks[event] = filtered;
+  }
+
+  settings.hooks = existingHooks;
+
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+
+  const location = global ? "global (~/.claude/settings.json)" : `project (${settingsPath})`;
+  console.log(`
+  VibeDiff initialized.
+
+  Hooks written to ${location}
+
+  Three hooks configured:
+    PreToolUse   - Captures file content before edits
+    PostToolUse  - Records changes, warns on removed exports
+    Stop         - Quality gate: blocks Claude on CRITICAL risk
+
+  Restart Claude Code to activate.
+`);
 }
 
 function cmdClear(projectRoot: string): void {

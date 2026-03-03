@@ -1,27 +1,48 @@
 {
   "name": "vibe-diff",
-  "version": "0.1.0",
-  "description": "Semantic diffs in plain English for Claude Code. See what changed in meaning, not just what lines moved.",
+  "version": "1.0.0",
+  "description": "AI code safety net for Claude Code. Detects breaking changes, blocks Claude on critical risk, and generates semantic diffs in plain English.",
   "main": "dist/cli.js",
   "bin": {
-    "vibe-diff": "dist/cli.js"
+    "vibe-diff": "./dist/cli.js"
   },
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "postinstall": "npm run build"
+    "test": "node dist/test/run.js",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "claude-code",
+    "claude",
     "plugin",
+    "hooks",
     "diff",
     "semantic-diff",
     "code-review",
-    "mcp",
-    "ai-coding"
+    "breaking-changes",
+    "ai-coding",
+    "ai-safety",
+    "developer-tools"
   ],
   "author": "Salah Eddine Boussettah",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SallahBoussettah/vibe-diff.git"
+  },
+  "homepage": "https://github.com/SallahBoussettah/vibe-diff",
+  "bugs": {
+    "url": "https://github.com/SallahBoussettah/vibe-diff/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "devDependencies": {
     "typescript": "^5.4.0",
     "@types/node": "^20.0.0"

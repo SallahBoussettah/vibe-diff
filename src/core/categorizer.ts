@@ -17,11 +17,20 @@ import {
 } from "./diff-parser";
 import * as path from "path";
 
+const MAX_FILE_LINES = 10000;
+
 export function analyzeFile(change: FileChange): FileAnalysis {
   const ext = path.extname(change.filePath);
   const isCode = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rs"].includes(ext);
   const isConfig = [".json", ".yaml", ".yml", ".toml", ".env", ".ini"].includes(ext);
   const isPackageJson = path.basename(change.filePath) === "package.json";
+
+  // Skip deep analysis on very large files to avoid timeout
+  const lineCount = Math.max(
+    change.oldContent.split("\n").length,
+    change.newContent.split("\n").length
+  );
+  const isTooLarge = lineCount > MAX_FILE_LINES;
 
   const analysis: FileAnalysis = {
     filePath: change.filePath,
@@ -68,11 +77,15 @@ export function analyzeFile(change: FileChange): FileAnalysis {
   }
 
   // For edits and writes — compare old vs new
-  if (isCode) {
+  if (isCode && !isTooLarge) {
     analysis.functions = analyzeFunctions(change.oldContent, change.newContent);
     analysis.exports = analyzeExports(change.oldContent, change.newContent);
     analysis.types = analyzeTypes(change.oldContent, change.newContent);
     analysis.behaviorChanges = detectBehaviorChanges(change.oldContent, change.newContent, analysis);
+  } else if (isCode && isTooLarge) {
+    analysis.behaviorChanges.push(`File too large (${lineCount} lines), deep analysis skipped`);
+    // Still check exports (cheap operation even on large files)
+    analysis.exports = analyzeExports(change.oldContent, change.newContent);
   }
 
   if (isConfig || isPackageJson) {

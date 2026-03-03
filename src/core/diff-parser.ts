@@ -46,31 +46,65 @@ const RESERVED_WORDS = new Set([
   "import", "export", "default", "from", "as", "await", "yield",
 ]);
 
+/**
+ * Extract function names and signatures from source code.
+ * Handles multi-line signatures by collapsing whitespace before matching.
+ */
 export function extractFunctions(content: string): Map<string, string> {
   const functions = new Map<string, string>();
+
+  // Collapse multi-line signatures: replace newlines inside parens with spaces.
+  // This lets single-line regex patterns match multi-line function signatures.
+  const collapsed = collapseParens(content);
+
   const patterns = [
-    // function name(...) { or async function name(...)
-    /(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\([^)]*\)[^{]*\{/g,
+    // function name(...) { or async function name(...) or function name<T>(...)
+    /(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*(?:<[^>]*>)?\s*\([^)]*\)[^{]*\{/g,
     // const name = (...) => or const name = async (...) =>
     /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\([^)]*\)\s*(?::\s*[^=]*?)?\s*=>/g,
-    // name(...) { inside class
-    /^\s+(?:async\s+)?(\w+)\s*\([^)]*\)[^{]*\{/gm,
+    // name(...) { inside class (methods)
+    /(?:^|\n)\s+(?:(?:public|private|protected|static|readonly|abstract|override)\s+)*(?:async\s+)?(\w+)\s*(?:<[^>]*>)?\s*\([^)]*\)[^{]*\{/g,
   ];
 
   for (const pattern of patterns) {
     let match: RegExpExecArray | null;
-    while ((match = pattern.exec(content)) !== null) {
+    while ((match = pattern.exec(collapsed)) !== null) {
       const name = match[1];
       if (RESERVED_WORDS.has(name)) continue;
-      // Capture the full signature line
-      const lineStart = content.lastIndexOf("\n", match.index) + 1;
-      const lineEnd = content.indexOf("\n", match.index);
-      const signatureLine = content.slice(lineStart, lineEnd === -1 ? undefined : lineEnd).trim();
-      functions.set(name, signatureLine);
+      // Capture the full match as the signature (already collapsed to single line)
+      const sig = match[0].trim().replace(/\s*\{$/, "").trim();
+      functions.set(name, sig);
     }
   }
 
   return functions;
+}
+
+/**
+ * Collapse multi-line parenthesized expressions into single lines.
+ * Replaces newlines inside matched parens with spaces.
+ * Handles nested parens and generic angle brackets.
+ */
+function collapseParens(content: string): string {
+  const chars = content.split("");
+  let depth = 0;
+  let angleDepth = 0;
+
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") depth = Math.max(0, depth - 1);
+    else if (ch === "<") angleDepth++;
+    else if (ch === ">") angleDepth = Math.max(0, angleDepth - 1);
+
+    // Inside parens or angle brackets, replace newlines with space
+    if ((depth > 0 || angleDepth > 0) && (ch === "\n" || ch === "\r")) {
+      chars[i] = " ";
+    }
+  }
+
+  // Normalize multiple spaces
+  return chars.join("").replace(/  +/g, " ");
 }
 
 export function extractExports(content: string): Map<string, string> {
@@ -160,8 +194,10 @@ export function detectReturnTypeChange(oldSig: string, newSig: string): boolean 
 
 export function detectParamChange(oldSig: string, newSig: string): boolean {
   const paramPattern = /\(([^)]*)\)/;
-  const oldParams = oldSig.match(paramPattern)?.[1]?.trim() || "";
-  const newParams = newSig.match(paramPattern)?.[1]?.trim() || "";
+  // Normalize whitespace before comparing
+  const normalize = (s: string) => s.replace(/\s+/g, " ").trim();
+  const oldParams = normalize(oldSig.match(paramPattern)?.[1] || "");
+  const newParams = normalize(newSig.match(paramPattern)?.[1] || "");
   return oldParams !== newParams;
 }
 

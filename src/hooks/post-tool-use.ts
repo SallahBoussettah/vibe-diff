@@ -164,38 +164,52 @@ function getGitContent(projectRoot: string, relativePath: string): string | null
 }
 
 function outputContext(projectRoot: string): void {
-  // Output a terse summary as additionalContext for Claude
-  // Only when there are meaningful changes
+  // Only inject context when risk level has CHANGED or on first detection.
+  // Prevents bloating Claude's context with 40 identical warnings on rapid edits.
   try {
     const { getSessionChanges } = require("../core/collector");
     const changes = getSessionChanges(projectRoot);
     const count = changes.length;
-    if (count > 0) {
-      // Quick risk check: any removed exports or breaking patterns?
-      let hasBreaking = false;
-      for (const change of changes) {
-        if (change.oldContent && change.newContent !== change.oldContent) {
-          // Check for removed exports (quick regex, not full analysis)
-          const oldExports = (change.oldContent.match(/export\s+(?:function|const|class|interface|type|enum)\s+\w+/g) || []);
-          const newExports = (change.newContent.match(/export\s+(?:function|const|class|interface|type|enum)\s+\w+/g) || []);
-          if (oldExports.length > newExports.length) {
-            hasBreaking = true;
-            break;
-          }
+    if (count === 0) return;
+
+    // Quick risk check: count removed exports across all changes
+    let removedExportCount = 0;
+    for (const change of changes) {
+      if (change.oldContent && change.newContent !== change.oldContent) {
+        const oldExports = (change.oldContent.match(/export\s+(?:function|const|class|interface|type|enum)\s+\w+/g) || []);
+        const newExports = (change.newContent.match(/export\s+(?:function|const|class|interface|type|enum)\s+\w+/g) || []);
+        if (oldExports.length > newExports.length) {
+          removedExportCount += oldExports.length - newExports.length;
         }
       }
-
-      if (hasBreaking) {
-        // Output additionalContext so Claude sees the warning
-        const output = JSON.stringify({
-          hookSpecificOutput: {
-            hookEventName: "PostToolUse",
-            additionalContext: `VibeDiff: ${count} file(s) tracked. Possible removed exports detected. Run 'vibe-diff report' for details.`,
-          },
-        });
-        process.stdout.write(output);
-      }
     }
+
+    if (removedExportCount === 0) return;
+
+    // Check if we already warned about this same state
+    const statePath = path.join(projectRoot, ".vibe-diff", "last-warning-state.json");
+    let lastState = { removedExports: 0, fileCount: 0 };
+    try {
+      lastState = JSON.parse(fs.readFileSync(statePath, "utf-8"));
+    } catch { /* no previous state */ }
+
+    // Only inject context if the situation changed
+    if (lastState.removedExports === removedExportCount && lastState.fileCount === count) {
+      return; // Same state, don't re-inject
+    }
+
+    // Save new state
+    try {
+      fs.writeFileSync(statePath, JSON.stringify({ removedExports: removedExportCount, fileCount: count }));
+    } catch { /* non-critical */ }
+
+    const output = JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        additionalContext: `VibeDiff: ${count} file(s) changed, ${removedExportCount} export(s) removed. Risk may be elevated.`,
+      },
+    });
+    process.stdout.write(output);
   } catch {
     // Silent fail
   }

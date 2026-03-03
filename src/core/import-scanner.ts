@@ -180,9 +180,11 @@ export function findRelatedTests(
   return [...new Set(tests)];
 }
 
-function walkFiles(dir: string, maxDepth = 5): string[] {
+const MAX_FILES = 500;
+
+function walkFiles(dir: string, maxDepth = 5, _count = { n: 0 }): string[] {
   const files: string[] = [];
-  if (maxDepth <= 0) return files;
+  if (maxDepth <= 0 || _count.n >= MAX_FILES) return files;
 
   let entries: fs.Dirent[];
   try {
@@ -192,15 +194,17 @@ function walkFiles(dir: string, maxDepth = 5): string[] {
   }
 
   for (const entry of entries) {
+    if (_count.n >= MAX_FILES) break;
     if (IGNORE_DIRS.includes(entry.name)) continue;
     if (entry.name.startsWith(".")) continue;
 
     const fullPath = path.join(dir, entry.name);
 
     if (entry.isDirectory()) {
-      files.push(...walkFiles(fullPath, maxDepth - 1));
+      files.push(...walkFiles(fullPath, maxDepth - 1, _count));
     } else if (entry.isFile() && CODE_EXTENSIONS.includes(path.extname(entry.name))) {
       files.push(fullPath);
+      _count.n++;
     }
   }
 
