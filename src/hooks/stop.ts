@@ -75,7 +75,7 @@ function handle(data: StopHookPayload): void {
     const riskLevel = report.risk.level;
 
     if (riskLevel === "CRITICAL") {
-      // BLOCK: Force Claude to review and fix breaking changes
+      // BLOCK: Force Claude to stop and fix breaking changes
       const breakingList = report.breakingChanges.slice(0, 5).join("\n  - ");
       const sideEffects = report.sideEffects
         .filter((s) => s.status === "likely-broken")
@@ -83,14 +83,18 @@ function handle(data: StopHookPayload): void {
         .map((s) => `${s.filePath}: ${s.reason}`)
         .join("\n  - ");
 
-      let reason = `VibeDiff detected CRITICAL risk (score: ${report.risk.score}).\n\n`;
+      let reason = `VibeDiff detected breaking changes that need attention before continuing.\n\n`;
       reason += `Breaking changes:\n  - ${breakingList}\n`;
       if (sideEffects) {
-        reason += `\nFiles that will break:\n  - ${sideEffects}\n`;
+        reason += `\nFiles that may break:\n  - ${sideEffects}\n`;
       }
-      reason += `\nPlease review these breaking changes and fix affected files before finishing.`;
+      const remaining = report.breakingChanges.length - 5;
+      if (remaining > 0) {
+        reason += `\n  ... and ${remaining} more.\n`;
+      }
+      reason += `\nRisk: Critical (score: ${report.risk.score})`;
+      reason += `\nPlease review these changes and fix affected files, or confirm the removals were intentional and update dependent imports.`;
 
-      // Track that we reported these issues (for loop prevention)
       saveReportedIssues(projectRoot, report.breakingChanges);
 
       const output = JSON.stringify({ decision: "block", reason });
@@ -98,19 +102,46 @@ function handle(data: StopHookPayload): void {
       process.exit(0);
 
     } else if (riskLevel === "HIGH") {
-      // WARN: Add context so Claude is aware, but don't block
-      const summary = buildSummary(report);
+      // WARN: Multi-line warning with affected files
+      const changes = report.breakingChanges.slice(0, 3);
+      const affected = report.sideEffects
+        .filter((s) => s.status === "likely-broken" || s.status === "needs-review")
+        .slice(0, 3)
+        .map((s) => s.filePath);
+
+      let msg = `VibeDiff detected changes that may cause issues:`;
+      for (const c of changes) {
+        msg += `\n  - ${c}`;
+      }
+      if (affected.length > 0) {
+        msg += `\nAffected files: ${affected.join(", ")}`;
+      }
+      msg += `\nRisk: High (score: ${report.risk.score}). Run 'vibe-diff report' for full details.`;
+
       const output = JSON.stringify({
         hookSpecificOutput: {
           hookEventName: "Stop",
-          additionalContext: `VibeDiff: HIGH risk detected (score: ${report.risk.score}). ${summary}`,
+          additionalContext: msg,
+        },
+      });
+      process.stdout.write(output);
+      process.exit(0);
+
+    } else if (riskLevel === "MEDIUM") {
+      // INFORM: Brief one-line note
+      const topChange = report.breakingChanges[0] || report.apiChanges[0] || `${report.filesChanged} file(s) modified`;
+      const msg = `VibeDiff: ${topChange}. Risk: Medium (score: ${report.risk.score}).`;
+      const output = JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: "Stop",
+          additionalContext: msg,
         },
       });
       process.stdout.write(output);
       process.exit(0);
 
     } else {
-      // LOW/MEDIUM: Silent. Report available via `vibe-diff report`.
+      // LOW: Silent. Report available via `vibe-diff report`.
       process.exit(0);
     }
   } catch {
