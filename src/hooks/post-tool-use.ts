@@ -6,18 +6,12 @@ import { addChange } from "../core/collector";
 import { FileChange } from "../types";
 
 /**
- * Claude Code PostToolUse hook for VibeDiff.
+ * PostToolUse hook for VibeDiff.
+ * Fires AFTER Claude edits/writes a file.
+ * Reads the new content from disk, pairs it with old content from pre-capture.json,
+ * and stores the diff in the session.
  *
- * Receives JSON on stdin with this schema:
- * {
- *   session_id, cwd, hook_event_name, tool_name,
- *   tool_input: { file_path, content | original_text + new_text },
- *   tool_response: { filePath, success }
- * }
- *
- * Exit 0 = success (stdout sent as context to Claude)
- * Exit 2 = blocking error
- * Any other = non-blocking error (silent)
+ * Outputs terse additionalContext on MEDIUM+ risk for Claude awareness.
  */
 
 interface HookPayload {
@@ -32,42 +26,31 @@ interface HookPayload {
 function main(): void {
   let input = "";
   process.stdin.setEncoding("utf-8");
-
-  process.stdin.on("data", (chunk: string) => {
-    input += chunk;
-  });
+  process.stdin.on("data", (chunk: string) => { input += chunk; });
+  process.stdin.on("error", () => process.exit(1));
 
   process.stdin.on("end", () => {
     try {
       const data: HookPayload = JSON.parse(input);
-      handleToolUse(data);
-    } catch (err) {
-      // Silent fail. Hooks must never break Claude Code.
-      // Exit 1 = non-blocking error, Claude continues normally.
+      handle(data);
+    } catch {
       process.exit(1);
     }
   });
-
-  // If stdin closes immediately with no data, just exit
-  process.stdin.on("error", () => process.exit(1));
 }
 
-function handleToolUse(data: HookPayload): void {
-  // Use cwd from the hook payload as the project root
-  const projectRoot = data.cwd || findProjectRoot();
-  if (!projectRoot) return;
-
-  const toolName = data.tool_name;
-  const toolInput = data.tool_input;
-
+function handle(data: HookPayload): void {
   try {
+    const projectRoot = data.cwd || process.cwd();
+    const toolName = data.tool_name;
+    const toolInput = data.tool_input;
+
     if (toolName === "Edit") {
       handleEdit(projectRoot, toolInput);
     } else if (toolName === "Write") {
       handleWrite(projectRoot, toolInput);
     }
   } catch {
-    // Silent fail. Never crash.
     process.exit(1);
   }
 }
@@ -76,88 +59,55 @@ function handleEdit(projectRoot: string, input: Record<string, unknown>): void {
   const filePath = input.file_path as string;
   if (!filePath) return;
 
-  const relativePath = path.isAbsolute(filePath)
-    ? path.relative(projectRoot, filePath)
-    : filePath;
-
   const absolutePath = path.isAbsolute(filePath)
     ? filePath
     : path.join(projectRoot, filePath);
+  const normalizedAbsolute = absolutePath.replace(/\\/g, "/");
+  const relativePath = normalizePath(
+    path.isAbsolute(filePath) ? path.relative(projectRoot, filePath) : filePath
+  );
 
-  // Read the current file (already edited by Claude at this point)
-  let currentContent = "";
+  // Read NEW content from disk (file already edited by Claude)
+  let newContent = "";
   try {
-    currentContent = fs.readFileSync(absolutePath, "utf-8");
+    newContent = fs.readFileSync(absolutePath, "utf-8");
   } catch {
     return;
   }
 
-  // Claude Code Edit tool field names (try all known variants)
-  const oldString = (input.original_text as string) || (input.old_string as string) || "";
-  const newString = (input.new_text as string) || (input.new_string as string) || "";
+  // Read OLD content from pre-capture (written by PreToolUse hook)
+  let oldContent = getPreCapturedContent(projectRoot, normalizedAbsolute);
 
-  // Reconstruct old content by reversing the edit.
-  // Normalize line endings: file on disk may use \r\n but tool_input uses \n.
-  let oldContent = currentContent;
-  if (oldString && newString) {
-    // Try direct replace first
-    if (currentContent.includes(newString)) {
-      oldContent = currentContent.replace(newString, oldString);
-    } else {
-      // Normalize \r\n to \n for matching, then restore
-      const normalizedCurrent = currentContent.replace(/\r\n/g, "\n");
-      const normalizedNew = newString.replace(/\r\n/g, "\n");
-      if (normalizedCurrent.includes(normalizedNew)) {
-        const normalizedOld = oldString.replace(/\r\n/g, "\n");
-        const rebuilt = normalizedCurrent.replace(normalizedNew, normalizedOld);
-        // Restore original line endings if file used \r\n
-        oldContent = currentContent.includes("\r\n")
-          ? rebuilt.replace(/(?<!\r)\n/g, "\r\n")
-          : rebuilt;
-      }
-    }
-  }
-
-  // Last resort: try git to get old content
-  if (oldContent === currentContent) {
-    try {
-      const { execSync } = require("child_process");
-      const rel = relativePath.replace(/\\/g, "/");
-      const gitContent = execSync(`git show HEAD:${rel}`, {
-        cwd: projectRoot, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"]
-      });
-      if (gitContent) oldContent = gitContent;
-    } catch {
-      // Not in git or file not committed
-    }
+  // Fallback: try git if pre-capture missed it
+  if (oldContent === null) {
+    oldContent = getGitContent(projectRoot, relativePath) || "";
   }
 
   const change: FileChange = {
     filePath: relativePath,
     oldContent,
-    newContent: currentContent,
-    editType: "edit",
+    newContent,
+    editType: oldContent ? "edit" : "create",
     timestamp: Date.now(),
   };
 
   addChange(projectRoot, change);
+  outputContext(projectRoot);
 }
 
 function handleWrite(projectRoot: string, input: Record<string, unknown>): void {
   const filePath = input.file_path as string;
   if (!filePath) return;
 
-  const relativePath = path.isAbsolute(filePath)
-    ? path.relative(projectRoot, filePath)
-    : filePath;
-
   const absolutePath = path.isAbsolute(filePath)
     ? filePath
     : path.join(projectRoot, filePath);
+  const normalizedAbsolute = absolutePath.replace(/\\/g, "/");
+  const relativePath = normalizePath(
+    path.isAbsolute(filePath) ? path.relative(projectRoot, filePath) : filePath
+  );
 
-  // For Write, content is the new file content.
-  // The file is already written by Claude at this point.
-  // Read it from disk (more reliable than the input in case of encoding).
+  // Read NEW content from disk
   let newContent = "";
   try {
     newContent = fs.readFileSync(absolutePath, "utf-8");
@@ -165,67 +115,94 @@ function handleWrite(projectRoot: string, input: Record<string, unknown>): void 
     newContent = (input.content as string) || "";
   }
 
-  // Try to get old content from our session (if we tracked it before)
-  let oldContent = "";
-  let editType: FileChange["editType"] = "create";
-  try {
-    const { getSessionChanges } = require("../core/collector");
-    const existing = getSessionChanges(projectRoot).find(
-      (c: FileChange) => c.filePath === relativePath
-    );
-    if (existing) {
-      // File was tracked before, so this is an overwrite
-      oldContent = existing.oldContent;
-      editType = "write";
-    }
-  } catch {
-    // First time seeing this file
-  }
+  // Read OLD content from pre-capture
+  let oldContent = getPreCapturedContent(projectRoot, normalizedAbsolute);
 
-  // If we don't have old content from session, try git
-  if (!oldContent && editType === "create") {
-    try {
-      const { execSync } = require("child_process");
-      const gitContent = execSync(
-        `git show HEAD:${relativePath.replace(/\\/g, "/")}`,
-        { cwd: projectRoot, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
-      );
-      if (gitContent) {
-        oldContent = gitContent;
-        editType = "write";
-      }
-    } catch {
-      // File doesn't exist in git, so it's a new file
-    }
+  // Fallback: try git
+  if (oldContent === null) {
+    oldContent = getGitContent(projectRoot, relativePath) || "";
   }
 
   const change: FileChange = {
     filePath: relativePath,
     oldContent,
     newContent,
-    editType,
+    editType: oldContent ? "write" : "create",
     timestamp: Date.now(),
   };
 
   addChange(projectRoot, change);
+  outputContext(projectRoot);
 }
 
-function findProjectRoot(): string {
-  let dir = process.cwd();
-  const root = path.parse(dir).root;
-
-  while (dir !== root) {
-    if (
-      fs.existsSync(path.join(dir, ".git")) ||
-      fs.existsSync(path.join(dir, "package.json")) ||
-      fs.existsSync(path.join(dir, "pyproject.toml"))
-    ) {
-      return dir;
+function getPreCapturedContent(projectRoot: string, normalizedAbsolutePath: string): string | null {
+  try {
+    const preCapturePath = path.join(projectRoot, ".vibe-diff", "pre-capture.json");
+    const preCapture = JSON.parse(fs.readFileSync(preCapturePath, "utf-8"));
+    const entry = preCapture[normalizedAbsolutePath];
+    if (entry && entry.content !== undefined) {
+      return entry.content;
     }
-    dir = path.dirname(dir);
+  } catch {
+    // No pre-capture data
   }
+  return null;
+}
 
-  return process.cwd();
+function getGitContent(projectRoot: string, relativePath: string): string | null {
+  try {
+    const { execSync } = require("child_process");
+    const gitPath = relativePath.replace(/\\/g, "/");
+    return execSync(`git show HEAD:${gitPath}`, {
+      cwd: projectRoot,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+  } catch {
+    return null;
+  }
+}
+
+function outputContext(projectRoot: string): void {
+  // Output a terse summary as additionalContext for Claude
+  // Only when there are meaningful changes
+  try {
+    const { getSessionChanges } = require("../core/collector");
+    const changes = getSessionChanges(projectRoot);
+    const count = changes.length;
+    if (count > 0) {
+      // Quick risk check: any removed exports or breaking patterns?
+      let hasBreaking = false;
+      for (const change of changes) {
+        if (change.oldContent && change.newContent !== change.oldContent) {
+          // Check for removed exports (quick regex, not full analysis)
+          const oldExports = (change.oldContent.match(/export\s+(?:function|const|class|interface|type|enum)\s+\w+/g) || []);
+          const newExports = (change.newContent.match(/export\s+(?:function|const|class|interface|type|enum)\s+\w+/g) || []);
+          if (oldExports.length > newExports.length) {
+            hasBreaking = true;
+            break;
+          }
+        }
+      }
+
+      if (hasBreaking) {
+        // Output additionalContext so Claude sees the warning
+        const output = JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: "PostToolUse",
+            additionalContext: `VibeDiff: ${count} file(s) tracked. Possible removed exports detected. Run 'vibe-diff report' for details.`,
+          },
+        });
+        process.stdout.write(output);
+      }
+    }
+  } catch {
+    // Silent fail
+  }
+}
+
+function normalizePath(p: string): string {
+  return p.replace(/\\/g, "/");
 }
 
 main();

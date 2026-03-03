@@ -39,6 +39,9 @@ export function saveSession(projectRoot: string, session: SessionData): void {
 }
 
 export function addChange(projectRoot: string, change: FileChange): void {
+  // Normalize path to forward slashes
+  change.filePath = change.filePath.replace(/\\/g, "/");
+
   const session = loadSession(projectRoot);
 
   const existingIdx = session.changes.findIndex(
@@ -46,7 +49,7 @@ export function addChange(projectRoot: string, change: FileChange): void {
   );
 
   if (existingIdx >= 0) {
-    // Keep the original oldContent, update newContent
+    // Keep the FIRST oldContent (from the initial state), update newContent
     session.changes[existingIdx].newContent = change.newContent;
     session.changes[existingIdx].timestamp = change.timestamp;
   } else {
@@ -57,9 +60,13 @@ export function addChange(projectRoot: string, change: FileChange): void {
 }
 
 export function clearSession(projectRoot: string): void {
-  const sessionPath = getSessionPath(projectRoot);
-  if (fs.existsSync(sessionPath)) {
-    fs.unlinkSync(sessionPath);
+  const dir = getStorageDir(projectRoot);
+  const filesToClear = ["session.json", "pre-capture.json", "reported-issues.json", "last-report.json"];
+  for (const file of filesToClear) {
+    const filePath = path.join(dir, file);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
   }
 }
 

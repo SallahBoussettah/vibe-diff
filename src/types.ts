@@ -4,6 +4,8 @@ export interface FileChange {
   newContent: string;
   editType: "edit" | "write" | "create" | "delete";
   timestamp: number;
+  /** Number of lines in the file before the change */
+  lineCount?: number;
 }
 
 export interface DiffHunk {

@@ -120,7 +120,7 @@ function cmdClear(projectRoot: string): void {
 }
 
 function cmdSetup(): void {
-  const hookPath = path.resolve(__dirname, "hooks", "post-tool-use.js");
+  const hooksDir = path.resolve(__dirname, "hooks").replace(/\\/g, "/");
 
   console.log(`
   VibeDiff Setup
@@ -133,14 +133,37 @@ function cmdSetup(): void {
 
   {
     "hooks": {
+      "PreToolUse": [
+        {
+          "matcher": "Edit|Write",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node ${hooksDir}/pre-tool-use.js",
+              "timeout": 5
+            }
+          ]
+        }
+      ],
       "PostToolUse": [
         {
           "matcher": "Edit|Write",
           "hooks": [
             {
               "type": "command",
-              "command": "node ${hookPath.replace(/\\/g, "/")}",
+              "command": "node ${hooksDir}/post-tool-use.js",
               "timeout": 10
+            }
+          ]
+        }
+      ],
+      "Stop": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node ${hooksDir}/stop.js",
+              "timeout": 30
             }
           ]
         }
@@ -148,8 +171,13 @@ function cmdSetup(): void {
     }
   }
 
-  Then use Claude Code normally. Changes are tracked automatically.
-  Run 'vibe-diff report' anytime to see the semantic diff.
+  How it works:
+    - PreToolUse:  Captures file content BEFORE Claude edits it
+    - PostToolUse: Records the change after edit, tracks session
+    - Stop:        Runs full analysis when Claude finishes responding
+                   Blocks Claude on CRITICAL risk, warns on HIGH
+
+  Run 'vibe-diff report' anytime for the full semantic diff.
   Run 'vibe-diff clear' to start a fresh session.
 `);
 }
