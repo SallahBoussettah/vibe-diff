@@ -256,6 +256,21 @@ function detectBehaviorChanges(
   if (newRoutes.length > oldRoutes.length) changes.push("Added new API route(s)");
   if (newRoutes.length < oldRoutes.length) changes.push("Removed API route(s)");
 
+  // React/JSX-specific changes
+  const oldHooks = (oldContent.match(/\buse[A-Z]\w*\s*\(/g) || []).map((h) => h.replace(/\s*\($/, ""));
+  const newHooks = (newContent.match(/\buse[A-Z]\w*\s*\(/g) || []).map((h) => h.replace(/\s*\($/, ""));
+  const addedHooks = newHooks.filter((h) => !oldHooks.includes(h));
+  const removedHooks = oldHooks.filter((h) => !newHooks.includes(h));
+  if (addedHooks.length > 0) changes.push(`Added React hooks: ${[...new Set(addedHooks)].join(", ")}`);
+  if (removedHooks.length > 0) changes.push(`Removed React hooks: ${[...new Set(removedHooks)].join(", ")}`);
+
+  // Props interface changes (detect renamed/removed Props types)
+  const propsPattern = /interface\s+(\w*Props\w*)/g;
+  const oldProps = [...oldContent.matchAll(propsPattern)].map((m) => m[1]);
+  const newProps = [...newContent.matchAll(propsPattern)].map((m) => m[1]);
+  const removedProps = oldProps.filter((p) => !newProps.includes(p));
+  if (removedProps.length > 0) changes.push(`Removed props interface(s): ${removedProps.join(", ")}`);
+
   // Summarize function changes as behavior
   for (const fn of analysis.functions) {
     if (fn.changeType === "modified" && fn.returnTypeChanged) {

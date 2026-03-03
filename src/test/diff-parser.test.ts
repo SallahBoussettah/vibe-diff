@@ -149,4 +149,30 @@ export function testDiffParser(test: TestFn): void {
   test("detectAsyncChange: both async", () => {
     assert.ok(!detectAsyncChange("async function foo()", "async function foo()"));
   });
+
+  test("extractExports: barrel re-export", () => {
+    const code = `export * from './auth';\nexport * from './user';`;
+    const exports = extractExports(code);
+    assert.ok(exports.has("*:./auth"), "should track barrel export from ./auth");
+    assert.ok(exports.has("*:./user"), "should track barrel export from ./user");
+  });
+
+  test("extractExports: namespace re-export", () => {
+    const code = `export * as AuthModule from './auth';`;
+    const exports = extractExports(code);
+    assert.ok(exports.has("AuthModule"), "should find namespace re-export");
+  });
+
+  test("extractExports: re-export with from clause", () => {
+    const code = `export { login, logout } from './auth';`;
+    const exports = extractExports(code);
+    assert.ok(exports.has("login"));
+    assert.ok(exports.has("logout"));
+  });
+
+  test("extractFunctions: React FC component", () => {
+    const code = `export const MyButton: React.FC<ButtonProps> = (props) => { return null; }`;
+    const fns = extractFunctions(code);
+    assert.ok(fns.has("MyButton"), "should find React.FC component");
+  });
 }

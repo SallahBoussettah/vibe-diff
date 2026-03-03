@@ -127,4 +127,29 @@ export function testCategorizer(test: TestFn): void {
     const deps = analyzeDependencies(old, new_);
     assert.ok(deps.some((d) => d.name === "express" && d.changeType === "upgraded"));
   });
+
+  test("analyzeFile: detects added React hooks", () => {
+    const change: FileChange = {
+      filePath: "src/App.tsx",
+      oldContent: "export function App() { return <div>Hello</div>; }",
+      newContent: "export function App() { const [count, setCount] = useState(0); useEffect(() => {}, []); return <div>{count}</div>; }",
+      editType: "edit",
+      timestamp: Date.now(),
+    };
+    const result = analyzeFile(change);
+    assert.ok(result.behaviorChanges.some((b) => b.includes("useState")));
+    assert.ok(result.behaviorChanges.some((b) => b.includes("useEffect")));
+  });
+
+  test("analyzeFile: detects removed Props interface", () => {
+    const change: FileChange = {
+      filePath: "src/Button.tsx",
+      oldContent: "interface ButtonProps { label: string; onClick: () => void; }\nexport function Button(props: ButtonProps) { return null; }",
+      newContent: "export function Button({ label }: { label: string }) { return null; }",
+      editType: "edit",
+      timestamp: Date.now(),
+    };
+    const result = analyzeFile(change);
+    assert.ok(result.behaviorChanges.some((b) => b.includes("ButtonProps")));
+  });
 }

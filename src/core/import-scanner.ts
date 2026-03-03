@@ -12,6 +12,59 @@ const IGNORE_DIRS = [
   "__pycache__", ".venv", "venv", "target", ".vibe-diff",
 ];
 
+/**
+ * Load tsconfig.json paths aliases from a project root.
+ * Returns a map of alias prefix -> resolved directory.
+ * e.g. {"@/": "src/", "~utils/": "src/utils/"}
+ */
+function loadPathAliases(projectRoot: string): Map<string, string> {
+  const aliases = new Map<string, string>();
+  const tsconfigPaths = [
+    path.join(projectRoot, "tsconfig.json"),
+    path.join(projectRoot, "jsconfig.json"),
+  ];
+
+  for (const configPath of tsconfigPaths) {
+    try {
+      if (!fs.existsSync(configPath)) continue;
+      const raw = fs.readFileSync(configPath, "utf-8");
+      // Strip comments (basic: // and /* */) for JSON parsing
+      const stripped = raw.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+      const config = JSON.parse(stripped);
+      const paths = config.compilerOptions?.paths;
+      const baseUrl = config.compilerOptions?.baseUrl || ".";
+      if (!paths) continue;
+
+      for (const [alias, targets] of Object.entries(paths)) {
+        if (!Array.isArray(targets) || targets.length === 0) continue;
+        const target = (targets as string[])[0];
+        // Strip trailing /* from both alias and target
+        const cleanAlias = alias.replace(/\/\*$/, "/");
+        const cleanTarget = target.replace(/\/\*$/, "/");
+        const resolved = path.join(projectRoot, baseUrl, cleanTarget);
+        aliases.set(cleanAlias, resolved);
+      }
+      break; // Use first config found
+    } catch {
+      // Invalid config, skip
+    }
+  }
+
+  return aliases;
+}
+
+// Cache aliases per project root
+let cachedAliases: { root: string; aliases: Map<string, string> } | null = null;
+
+function getAliases(projectRoot: string): Map<string, string> {
+  if (cachedAliases && cachedAliases.root === projectRoot) {
+    return cachedAliases.aliases;
+  }
+  const aliases = loadPathAliases(projectRoot);
+  cachedAliases = { root: projectRoot, aliases };
+  return aliases;
+}
+
 export function findDependents(
   changedFile: string,
   projectRoot: string,
@@ -85,7 +138,7 @@ function buildImportPatterns(changedFile: string, projectRoot: string): string[]
   const relNoExt = relFromRoot.replace(/\.[^.]+$/, "");
 
   // Common import patterns for the changed file
-  // ./filename, ../dir/filename, @/dir/filename
+  // ./filename, ../dir/filename
   patterns.push(`/${baseName}'`);
   patterns.push(`/${baseName}"`);
   patterns.push(`/${baseName}\``);
@@ -95,6 +148,21 @@ function buildImportPatterns(changedFile: string, projectRoot: string): string[]
     const dirName = path.basename(path.dirname(changedFile));
     patterns.push(`/${dirName}'`);
     patterns.push(`/${dirName}"`);
+  }
+
+  // tsconfig/jsconfig path alias patterns
+  // e.g. if @/ maps to src/ and file is src/auth/login.ts,
+  // match imports like @/auth/login
+  const aliases = getAliases(projectRoot);
+  for (const [alias, resolvedDir] of aliases) {
+    const normalizedResolved = resolvedDir.replace(/\\/g, "/");
+    const normalizedFile = changedFile.replace(/\\/g, "/");
+    if (normalizedFile.startsWith(normalizedResolved)) {
+      const relativePart = normalizedFile.slice(normalizedResolved.length).replace(/\.[^.]+$/, "");
+      const aliasImport = alias + relativePart;
+      patterns.push(`'${aliasImport}'`);
+      patterns.push(`"${aliasImport}"`);
+    }
   }
 
   return patterns;

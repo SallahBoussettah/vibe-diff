@@ -62,8 +62,14 @@ export function extractFunctions(content: string): Map<string, string> {
     /(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*(?:<[^>]*>)?\s*\([^)]*\)[^{]*\{/g,
     // const name = (...) => or const name = async (...) =>
     /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\([^)]*\)\s*(?::\s*[^=]*?)?\s*=>/g,
+    // const Name: React.FC<Props> = (...) => (React functional component with FC type)
+    /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*:\s*(?:React\.)?(?:FC|FunctionComponent)(?:<[^>]*>)?\s*=\s*\([^)]*\)\s*=>/g,
     // name(...) { inside class (methods)
     /(?:^|\n)\s+(?:(?:public|private|protected|static|readonly|abstract|override)\s+)*(?:async\s+)?(\w+)\s*(?:<[^>]*>)?\s*\([^)]*\)[^{]*\{/g,
+    // React hooks: const [state, setState] = useState -- extract as hook usage pattern
+    // (not extracted as functions, but we detect custom hooks below)
+    // Custom hooks: export function useXxx(...)
+    // Already covered by the first pattern since hooks are just functions starting with "use"
   ];
 
   for (const pattern of patterns) {
@@ -112,17 +118,27 @@ export function extractExports(content: string): Map<string, string> {
   const patterns = [
     // export function/const/class/interface/type/enum name
     /export\s+(?:default\s+)?(?:async\s+)?(?:function|const|let|var|class|interface|type|enum)\s+(\w+)/g,
-    // export { name1, name2 }
-    /export\s*\{([^}]+)\}/g,
-    // export default
+    // export { name1, name2 } or export { name1, name2 } from './module'
+    /export\s*\{([^}]+)\}(?:\s*from\s*['"][^'"]+['"])?/g,
+    // export default name
     /export\s+default\s+(\w+)/g,
+    // export * from './module' (barrel re-export)
+    /export\s*\*\s*from\s*['"]([^'"]+)['"]/g,
+    // export * as name from './module' (namespace re-export)
+    /export\s*\*\s*as\s+(\w+)\s+from\s*['"]([^'"]+)['"]/g,
   ];
 
   for (const pattern of patterns) {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(content)) !== null) {
-      if (pattern.source.includes("\\{")) {
-        // Handle export { name1, name2 }
+      if (pattern.source.includes("\\*\\s*from")) {
+        // export * from './module' -- barrel export, track the source
+        exports.set(`*:${match[1]}`, `barrel:${match[1]}`);
+      } else if (pattern.source.includes("\\*\\s*as")) {
+        // export * as Name from './module'
+        exports.set(match[1], `namespace:${match[2]}`);
+      } else if (pattern.source.includes("\\{")) {
+        // export { name1, name2 }
         const names = match[1].split(",").map((n) => n.trim().split(/\s+as\s+/)[0].trim());
         for (const name of names) {
           if (name) exports.set(name, "re-export");
