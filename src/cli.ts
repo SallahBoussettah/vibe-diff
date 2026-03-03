@@ -136,7 +136,13 @@ function cmdSetup(): void {
       "PostToolUse": [
         {
           "matcher": "Edit|Write",
-          "command": "node ${hookPath.replace(/\\/g, "/")}"
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node ${hookPath.replace(/\\/g, "/")}",
+              "timeout": 10
+            }
+          ]
         }
       ]
     }

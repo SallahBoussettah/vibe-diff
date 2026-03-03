@@ -109,10 +109,12 @@ export interface SessionData {
 }
 
 export interface HookInput {
-  session_id?: string;
+  session_id: string;
+  cwd: string;
+  hook_event_name: string;
   tool_name: string;
   tool_input: Record<string, unknown>;
-  tool_output?: Record<string, unknown>;
+  tool_response?: Record<string, unknown>;
 }
 
 export interface VibeDiffConfig {
