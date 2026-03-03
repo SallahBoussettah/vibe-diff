@@ -92,15 +92,45 @@ function handleEdit(projectRoot: string, input: Record<string, unknown>): void {
     return;
   }
 
-  // Claude Code Edit tool uses "original_text" and "new_text"
-  // (also handle old_string/new_string as fallback)
+  // Claude Code Edit tool field names (try all known variants)
   const oldString = (input.original_text as string) || (input.old_string as string) || "";
   const newString = (input.new_text as string) || (input.new_string as string) || "";
 
-  // Reconstruct old content by reversing the edit
-  const oldContent = oldString && newString
-    ? currentContent.replace(newString, oldString)
-    : currentContent;
+  // Reconstruct old content by reversing the edit.
+  // Normalize line endings: file on disk may use \r\n but tool_input uses \n.
+  let oldContent = currentContent;
+  if (oldString && newString) {
+    // Try direct replace first
+    if (currentContent.includes(newString)) {
+      oldContent = currentContent.replace(newString, oldString);
+    } else {
+      // Normalize \r\n to \n for matching, then restore
+      const normalizedCurrent = currentContent.replace(/\r\n/g, "\n");
+      const normalizedNew = newString.replace(/\r\n/g, "\n");
+      if (normalizedCurrent.includes(normalizedNew)) {
+        const normalizedOld = oldString.replace(/\r\n/g, "\n");
+        const rebuilt = normalizedCurrent.replace(normalizedNew, normalizedOld);
+        // Restore original line endings if file used \r\n
+        oldContent = currentContent.includes("\r\n")
+          ? rebuilt.replace(/(?<!\r)\n/g, "\r\n")
+          : rebuilt;
+      }
+    }
+  }
+
+  // Last resort: try git to get old content
+  if (oldContent === currentContent) {
+    try {
+      const { execSync } = require("child_process");
+      const rel = relativePath.replace(/\\/g, "/");
+      const gitContent = execSync(`git show HEAD:${rel}`, {
+        cwd: projectRoot, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"]
+      });
+      if (gitContent) oldContent = gitContent;
+    } catch {
+      // Not in git or file not committed
+    }
+  }
 
   const change: FileChange = {
     filePath: relativePath,
