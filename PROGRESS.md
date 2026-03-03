@@ -1,15 +1,28 @@
 # VibeDiff Progress Tracker
 
-## Status: Prototype (v0.1.0) - ~30% complete
+## Status: Working v0.2.0 - ~65% complete
+
+All three hook layers are live and tested with real Claude Code sessions.
+
+---
 
 ## Done
+
+### Three-Layer Hook Architecture (THE CORE FEATURE)
+- [x] **PreToolUse hook** - Captures file content BEFORE Claude edits. Stores to pre-capture.json. Fixes the old content reconstruction problem.
+- [x] **PostToolUse hook** - Reads file AFTER edit, pairs with pre-captured old content for perfect diffs. Injects terse warning into Claude's context when removed exports are detected.
+- [x] **Stop hook (Quality Gate)** - Runs full semantic analysis when Claude finishes responding. Blocks Claude on CRITICAL risk, forces self-review. Warns on HIGH. Silent on LOW/MEDIUM. Loop prevention via stop_hook_active check and reported-issues tracking.
+- [x] **Tested live with real Claude Code** - All three hooks fire correctly. Stop hook blocked Claude at CRITICAL (score 15), let through at HIGH (score 9) after fixes applied.
 
 ### Core Architecture
 - [x] Project structure (TypeScript, compiled to dist/)
 - [x] Type definitions for all data structures
 - [x] CLI with 6 commands (report, commit-msg, pr-desc, status, clear, setup)
-- [x] PostToolUse hook skeleton for Edit/Write tracking
 - [x] Session storage system (.vibe-diff/session.json)
+- [x] Pre-capture storage (.vibe-diff/pre-capture.json)
+- [x] Path normalization (all forward slashes in storage)
+- [x] Error isolation (hooks exit 1 on error, never crash Claude Code)
+- [x] Git diff fallback for old content when pre-capture misses
 
 ### Analysis Engine
 - [x] Diff computation (line-level added/removed)
@@ -27,8 +40,9 @@
 - [x] Breaking change detection (removed exports, return type changes, param changes)
 - [x] Config change detection (package.json version, scripts, general config files)
 - [x] Dependency change detection (added/removed/upgraded/downgraded packages)
+- [x] Security pattern detection (innerHTML, eval, SQL injection)
 
-### Import & Dependency Scanning
+### Import and Dependency Scanning
 - [x] Basic import pattern matching (ES modules, CommonJS require)
 - [x] Find files that import changed modules
 - [x] Detect broken symbols (uses removed export)
@@ -36,7 +50,7 @@
 
 ### Risk Scoring
 - [x] Score computation based on breaking changes, dependents, tests, security
-- [x] LOW/MEDIUM/HIGH/CRITICAL thresholds
+- [x] LOW/MEDIUM/HIGH/CRITICAL thresholds with distinct behavior per level
 - [x] Human-readable risk reasons
 
 ### Output
@@ -47,33 +61,30 @@
 
 ### Testing
 - [x] Manual integration test with fake auth/login scenario (passed)
-- [x] Verified: detects breaking changes, new files, new deps, risk scoring works
+- [x] Live test with real Claude Code session (passed)
+- [x] PreToolUse captures old content correctly (confirmed)
+- [x] PostToolUse pairs with pre-capture and records diffs (confirmed)
+- [x] PostToolUse injects context warning on removed exports (confirmed)
+- [x] Stop hook blocks at CRITICAL risk (confirmed, score 15)
+- [x] Stop hook allows at HIGH risk (confirmed, score 9)
+- [x] Stop hook loop prevention works (confirmed, does not re-block on same issues)
 
 ---
 
 ## Not Done
 
-### Critical (must fix before v1.0)
+### Important (needed for v1.0 release quality)
 
-- [ ] **Test with real Claude Code sessions** - Hook input format is assumed, not verified. Need to confirm the JSON schema Claude Code sends to PostToolUse hooks.
-- [ ] **Hook error isolation** - If the hook throws, does it break Claude Code? Need try/catch wrapping, silent failure, stderr logging.
-- [ ] **Handle Write tool properly** - For Write (full file overwrite), the old content is gone by the time PostToolUse fires. Need a PreToolUse hook to capture old content, or use git diff as fallback.
-- [ ] **Git diff fallback** - When session tracking misses something, fall back to `git diff` to get actual changes. More reliable for edge cases.
+- [ ] **Race condition on concurrent edits** - Multiple PostToolUse hooks fire in parallel on rapid edits. Session.json read-modify-write can lose data. Fix: switch to append-only .jsonl or file locking.
 - [ ] **Multi-line function signatures** - Current regex fails on functions with params spanning multiple lines, generics, decorators.
 - [ ] **Barrel export handling** - `export * from './module'` and `export { default as Name } from './module'` not handled.
 - [ ] **Path alias resolution** - tsconfig `paths` (like `@/components/...`) not resolved. Import scanner won't find dependents using aliases.
-
-### Important (needed for quality)
-
-- [ ] **Unit test suite** - Tests for diff-parser, categorizer, import-scanner, risk-scorer
-- [ ] **Integration tests** - End-to-end tests with realistic codebases
-- [ ] **JSX/TSX handling** - Component return types, props interfaces, hook patterns
-- [ ] **Class method analysis** - Constructor changes, static methods, getters/setters
-- [ ] **Destructured export handling** - `export const { a, b } = obj`
-- [ ] **Binary file detection** - Skip binary files (images, compiled assets)
-- [ ] **Large file handling** - Cap analysis on files over N lines to avoid slowdowns
-- [ ] **Config file support** - Read .vibediffrc or vibe-diff.config.json for user preferences
-- [ ] **Proper npm bin setup** - Shebang lines, postinstall build verification
+- [ ] **Unit test suite** - Tests for diff-parser, categorizer, import-scanner, risk-scorer.
+- [ ] **Large file handling** - Cap analysis on files over N lines to avoid slowdowns in Stop hook.
+- [ ] **JSX/TSX handling** - Component return types, props interfaces, hook patterns.
+- [ ] **npm global install** - `npm i -g vibe-diff` with proper bin shebang and postinstall.
+- [ ] **One-command setup** - `npx vibe-diff init` to auto-configure hooks in settings.json.
+- [ ] **Context bloat prevention** - PostToolUse injects context on every edit with removed exports. On 40+ edits this could bloat context. Fix: only inject on first detection or on risk level change.
 
 ### Nice to Have (v1.1+)
 
@@ -81,14 +92,15 @@
 - [ ] Go support (func extraction, import analysis)
 - [ ] Rust support (fn/impl extraction, use analysis)
 - [ ] LLM-powered summaries (optional, via Claude Agent SDK) for richer descriptions
-- [ ] Clipboard copy command (`vibe-diff report --copy`)
-- [ ] Watch mode (live updating report as Claude works)
+- [ ] Watch mode (`vibe-diff watch` with live terminal updates via fs.watch on session.json)
+- [ ] Claude Code Skill (`.claude/skills/vibediff.md`) for `/vibediff` command
 - [ ] Session history (compare across sessions)
-- [ ] Interactive terminal UI (scrollable, collapsible sections)
 - [ ] VS Code extension wrapper
 - [ ] CI/CD pipeline (GitHub Actions: lint, test, build)
 - [ ] npm publish pipeline
+- [ ] Git-based adapter for Cursor/Windsurf/any editor (polls `git diff`, no hooks needed)
 - [ ] Monorepo support (multiple package.json files, workspace awareness)
+- [ ] HTTP hook mode (background server instead of process-per-hook, sub-10ms response)
 
 ---
 
@@ -96,10 +108,9 @@
 
 1. Regex-based function extraction misses multi-line signatures
 2. Import scanner does not resolve tsconfig path aliases
-3. Write hook cannot capture old file content (PostToolUse fires after write)
-4. No test suite exists
-5. Hook JSON schema from Claude Code is assumed, not verified
-6. No error boundary in hook (crash could affect Claude Code session)
+3. No automated test suite
+4. Concurrent PostToolUse hooks can create race conditions on session.json
+5. PostToolUse context injection fires on every edit with removed exports (could bloat context on many edits)
 
 ---
 
@@ -107,15 +118,17 @@
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| src/types.ts | 120 | All TypeScript type definitions |
-| src/cli.ts | 130 | CLI entry point, 6 commands |
-| src/hooks/post-tool-use.ts | 110 | PostToolUse hook for Claude Code |
-| src/core/collector.ts | 70 | Session change storage |
-| src/core/diff-parser.ts | 170 | Function/export/type/import extraction |
+| src/types.ts | 130 | All TypeScript type definitions |
+| src/cli.ts | 190 | CLI entry point, 6 commands, setup instructions |
+| src/hooks/pre-tool-use.ts | 70 | PreToolUse hook: captures old content before edits |
+| src/hooks/post-tool-use.ts | 170 | PostToolUse hook: records diffs, injects context warnings |
+| src/hooks/stop.ts | 150 | Stop hook: quality gate, blocks on CRITICAL risk |
+| src/core/collector.ts | 85 | Session change storage with path normalization |
+| src/core/diff-parser.ts | 180 | Function/export/type/import extraction |
 | src/core/categorizer.ts | 280 | Change categorization engine |
 | src/core/import-scanner.ts | 190 | Dependency and test file scanning |
 | src/core/risk-scorer.ts | 85 | Risk assessment scoring |
 | src/core/analyzer.ts | 160 | Main analysis orchestrator |
 | src/output/terminal.ts | 150 | Colored terminal output |
-| src/output/markdown.ts | 190 | Markdown, commit msg, PR desc |
-| **Total** | **~1,655** | |
+| src/output/markdown.ts | 190 | Markdown, commit msg, PR desc generation |
+| **Total** | **~2,030** | |
