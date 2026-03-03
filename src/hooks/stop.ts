@@ -102,7 +102,7 @@ function handle(data: StopHookPayload): void {
       process.exit(0);
 
     } else if (riskLevel === "HIGH") {
-      // WARN: Multi-line warning with affected files
+      // WARN: Multi-line warning via systemMessage
       const changes = report.breakingChanges.slice(0, 3);
       const affected = report.sideEffects
         .filter((s) => s.status === "likely-broken" || s.status === "needs-review")
@@ -118,25 +118,15 @@ function handle(data: StopHookPayload): void {
       }
       msg += `\nRisk: High (score: ${report.risk.score}). Run 'vibe-diff report' for full details.`;
 
-      const output = JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: "Stop",
-          additionalContext: msg,
-        },
-      });
+      const output = JSON.stringify({ systemMessage: msg });
       process.stdout.write(output);
       process.exit(0);
 
     } else if (riskLevel === "MEDIUM") {
-      // INFORM: Brief one-line note
+      // INFORM: Brief one-line note via systemMessage
       const topChange = report.breakingChanges[0] || report.apiChanges[0] || `${report.filesChanged} file(s) modified`;
       const msg = `VibeDiff: ${topChange}. Risk: Medium (score: ${report.risk.score}).`;
-      const output = JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: "Stop",
-          additionalContext: msg,
-        },
-      });
+      const output = JSON.stringify({ systemMessage: msg });
       process.stdout.write(output);
       process.exit(0);
 
@@ -163,13 +153,9 @@ function handleRecheck(projectRoot: string): void {
 
     if (unresolvedIssues.length > 0 && report.risk.level === "CRITICAL") {
       // Still critical, but don't block again to avoid infinite loop.
-      // Just warn.
-      const output = JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: "Stop",
-          additionalContext: `VibeDiff: ${unresolvedIssues.length} breaking change(s) still unresolved. Risk remains CRITICAL.`,
-        },
-      });
+      // Just warn via systemMessage.
+      const msg = `VibeDiff: ${unresolvedIssues.length} breaking change(s) still unresolved. Risk remains Critical.`;
+      const output = JSON.stringify({ systemMessage: msg });
       process.stdout.write(output);
     }
 
