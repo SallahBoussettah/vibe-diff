@@ -53,8 +53,9 @@ function handle(data: StopHookPayload): void {
     }
 
     // Check if we have any changes to analyze
-    const sessionPath = path.join(projectRoot, ".vibe-diff", "session.json");
-    if (!fs.existsSync(sessionPath)) {
+    const changesPath = path.join(projectRoot, ".vibe-diff", "changes.jsonl");
+    const legacyPath = path.join(projectRoot, ".vibe-diff", "session.json");
+    if (!fs.existsSync(changesPath) && !fs.existsSync(legacyPath)) {
       process.exit(0);
       return;
     }
