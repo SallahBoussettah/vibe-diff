@@ -1,0 +1,29 @@
+{
+  "name": "vibe-diff",
+  "version": "0.1.0",
+  "description": "Semantic diffs in plain English for Claude Code. See what changed in meaning, not just what lines moved.",
+  "main": "dist/cli.js",
+  "bin": {
+    "vibe-diff": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "postinstall": "npm run build"
+  },
+  "keywords": [
+    "claude-code",
+    "plugin",
+    "diff",
+    "semantic-diff",
+    "code-review",
+    "mcp",
+    "ai-coding"
+  ],
+  "author": "Salah Eddine Boussettah",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0"
+  }
+}
