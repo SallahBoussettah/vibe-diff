@@ -113,6 +113,11 @@ function collapseParens(content: string): string {
   return chars.join("").replace(/  +/g, " ");
 }
 
+const EXPORT_KEYWORDS = new Set([
+  "function", "class", "interface", "type", "enum", "const", "let", "var",
+  "async", "abstract", "default",
+]);
+
 export function extractExports(content: string): Map<string, string> {
   const exports = new Map<string, string>();
   const patterns = [
@@ -120,7 +125,7 @@ export function extractExports(content: string): Map<string, string> {
     /export\s+(?:default\s+)?(?:async\s+)?(?:function|const|let|var|class|interface|type|enum)\s+(\w+)/g,
     // export { name1, name2 } or export { name1, name2 } from './module'
     /export\s*\{([^}]+)\}(?:\s*from\s*['"][^'"]+['"])?/g,
-    // export default name
+    // export default name (but NOT "export default function/class/etc" — those are handled by pattern 1)
     /export\s+default\s+(\w+)/g,
     // export * from './module' (barrel re-export)
     /export\s*\*\s*from\s*['"]([^'"]+)['"]/g,
@@ -144,7 +149,11 @@ export function extractExports(content: string): Map<string, string> {
           if (name) exports.set(name, "re-export");
         }
       } else {
-        exports.set(match[1], match[0].trim());
+        const name = match[1];
+        // Skip keywords captured by "export default (\w+)" matching
+        // "export default function/class/etc" — the actual name is captured by pattern 1
+        if (EXPORT_KEYWORDS.has(name)) continue;
+        exports.set(name, match[0].trim());
       }
     }
   }

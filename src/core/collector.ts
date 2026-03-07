@@ -76,8 +76,11 @@ export function loadSession(projectRoot: string): SessionData {
           // Same file seen before: keep first oldContent, update newContent
           changes[idx].newContent = change.newContent;
           changes[idx].timestamp = change.timestamp;
-          // Update oldContent only if incoming has content and existing is empty
-          if (change.oldContent && !changes[idx].oldContent) {
+          // If the file was originally created in this session, preserve that.
+          // The true "old" state is "file didn't exist", regardless of later edits.
+          if (changes[idx].editType === "create") {
+            // Keep editType "create" and oldContent empty — file is new this session
+          } else if (change.oldContent && !changes[idx].oldContent) {
             changes[idx].oldContent = change.oldContent;
             changes[idx].editType = change.editType;
           }
@@ -116,7 +119,7 @@ export function clearSession(projectRoot: string): void {
   const filesToClear = [
     "changes.jsonl", "session.json", "session-meta.json",
     "pre-capture.json", "reported-issues.json", "last-report.json",
-    "last-warning-state.json",
+    "last-warning-state.json", "last-analyzed-mtime.json",
   ];
   for (const file of filesToClear) {
     const filePath = path.join(dir, file);

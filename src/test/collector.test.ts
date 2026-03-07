@@ -53,16 +53,17 @@ export function testCollector(test: TestFn): void {
     }
   });
 
-  test("addChange: updates oldContent if previous was empty (create then edit)", () => {
+  test("addChange: preserves create editType when file is created then edited", () => {
     const dir = makeTempDir();
     try {
       addChange(dir, { filePath: "src/b.ts", oldContent: "", newContent: "created", editType: "create", timestamp: 1 });
       addChange(dir, { filePath: "src/b.ts", oldContent: "created", newContent: "edited", editType: "edit", timestamp: 2 });
       const session = loadSession(dir);
       assert.strictEqual(session.changes.length, 1);
-      assert.strictEqual(session.changes[0].oldContent, "created");
+      // File was created this session — oldContent stays empty, editType stays "create"
+      assert.strictEqual(session.changes[0].oldContent, "");
       assert.strictEqual(session.changes[0].newContent, "edited");
-      assert.strictEqual(session.changes[0].editType, "edit");
+      assert.strictEqual(session.changes[0].editType, "create");
     } finally {
       cleanUp(dir);
     }

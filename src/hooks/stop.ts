@@ -3,6 +3,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { generateReport } from "../core/analyzer";
+import { clearSession } from "../core/collector";
 import { formatTerminal } from "../output/terminal";
 
 /**
@@ -60,8 +61,36 @@ function handle(data: StopHookPayload): void {
       return;
     }
 
+    // Session boundary: clear stale data if session_id changed
+    clearStaleSession(projectRoot, data.session_id);
+
+    // Skip if changes.jsonl hasn't been modified since last analysis
+    if (fs.existsSync(changesPath)) {
+      const lastAnalyzedPath = path.join(projectRoot, ".vibe-diff", "last-analyzed-mtime.json");
+      const changesMtime = fs.statSync(changesPath).mtimeMs;
+      try {
+        const lastAnalyzed = JSON.parse(fs.readFileSync(lastAnalyzedPath, "utf-8"));
+        if (lastAnalyzed.mtime === changesMtime) {
+          // No new changes since last analysis — skip
+          process.exit(0);
+          return;
+        }
+      } catch { /* no previous analysis */ }
+      // Save current mtime (will be written after analysis below)
+    }
+
     // Run full semantic analysis
     const report = generateReport(projectRoot);
+
+    // Record that we analyzed at this mtime to avoid re-analyzing unchanged data
+    try {
+      const changesPathForMtime = path.join(projectRoot, ".vibe-diff", "changes.jsonl");
+      if (fs.existsSync(changesPathForMtime)) {
+        const mtime = fs.statSync(changesPathForMtime).mtimeMs;
+        const lastAnalyzedPath = path.join(projectRoot, ".vibe-diff", "last-analyzed-mtime.json");
+        fs.writeFileSync(lastAnalyzedPath, JSON.stringify({ mtime }));
+      }
+    } catch { /* non-critical */ }
 
     if (report.filesChanged === 0) {
       process.exit(0);
@@ -205,6 +234,21 @@ function loadReportedIssues(projectRoot: string): string[] {
     // No previous issues
   }
   return [];
+}
+
+function clearStaleSession(projectRoot: string, currentSessionId: string): void {
+  try {
+    const metaPath = path.join(projectRoot, ".vibe-diff", "session-meta.json");
+    if (!fs.existsSync(metaPath)) return;
+
+    const meta = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
+    if (meta.sessionId && meta.sessionId !== currentSessionId) {
+      // Different session — clear all stale data
+      clearSession(projectRoot);
+    }
+  } catch {
+    // Silent fail
+  }
 }
 
 main();
