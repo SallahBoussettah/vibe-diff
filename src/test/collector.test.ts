@@ -117,4 +117,60 @@ export function testCollector(test: TestFn): void {
       cleanUp(dir);
     }
   });
+
+  test("addChange: stores the supplied session id verbatim", () => {
+    const dir = makeTempDir();
+    try {
+      addChange(
+        dir,
+        { filePath: "a.ts", oldContent: "1", newContent: "2", editType: "edit", timestamp: 1 },
+        "claude-session-abc"
+      );
+      const meta = JSON.parse(
+        fs.readFileSync(path.join(dir, ".vibe-diff", "session-meta.json"), "utf-8")
+      );
+      assert.strictEqual(meta.sessionId, "claude-session-abc");
+      assert.strictEqual(loadSession(dir).sessionId, "claude-session-abc");
+    } finally {
+      cleanUp(dir);
+    }
+  });
+
+  test("addChange: same session id keeps accumulating changes", () => {
+    const dir = makeTempDir();
+    try {
+      addChange(dir, { filePath: "a.ts", oldContent: "1", newContent: "2", editType: "edit", timestamp: 1 }, "s1");
+      addChange(dir, { filePath: "b.ts", oldContent: "1", newContent: "2", editType: "edit", timestamp: 2 }, "s1");
+      assert.strictEqual(getSessionChanges(dir).length, 2);
+    } finally {
+      cleanUp(dir);
+    }
+  });
+
+  test("addChange: a new session id drops the previous session's changes", () => {
+    const dir = makeTempDir();
+    try {
+      addChange(dir, { filePath: "a.ts", oldContent: "1", newContent: "2", editType: "edit", timestamp: 1 }, "s1");
+      addChange(dir, { filePath: "b.ts", oldContent: "1", newContent: "2", editType: "edit", timestamp: 2 }, "s2");
+
+      const changes = getSessionChanges(dir);
+      assert.strictEqual(changes.length, 1);
+      assert.strictEqual(changes[0].filePath, "b.ts");
+      assert.strictEqual(loadSession(dir).sessionId, "s2");
+    } finally {
+      cleanUp(dir);
+    }
+  });
+
+  test("addChange: omitting the session id preserves existing changes", () => {
+    const dir = makeTempDir();
+    try {
+      addChange(dir, { filePath: "a.ts", oldContent: "1", newContent: "2", editType: "edit", timestamp: 1 }, "s1");
+      addChange(dir, { filePath: "b.ts", oldContent: "1", newContent: "2", editType: "edit", timestamp: 2 });
+      assert.strictEqual(getSessionChanges(dir).length, 2);
+      assert.strictEqual(loadSession(dir).sessionId, "s1");
+    } finally {
+      cleanUp(dir);
+    }
+  });
 }

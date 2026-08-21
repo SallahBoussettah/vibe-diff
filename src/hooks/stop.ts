@@ -4,7 +4,6 @@ import * as fs from "fs";
 import * as path from "path";
 import { generateReport } from "../core/analyzer";
 import { clearSession } from "../core/collector";
-import { formatTerminal } from "../output/terminal";
 
 /**
  * Stop hook for VibeDiff.
@@ -197,22 +196,6 @@ function handleRecheck(projectRoot: string): void {
   process.exit(0);
 }
 
-function buildSummary(report: ReturnType<typeof generateReport>): string {
-  const parts: string[] = [];
-  if (report.breakingChanges.length > 0) {
-    parts.push(`${report.breakingChanges.length} breaking change(s)`);
-  }
-  const brokenDeps = report.sideEffects.filter((s) => s.status === "likely-broken");
-  if (brokenDeps.length > 0) {
-    parts.push(`${brokenDeps.length} file(s) likely broken`);
-  }
-  const brokenTests = report.affectedTests.filter((t) => t.status === "likely-broken");
-  if (brokenTests.length > 0) {
-    parts.push(`${brokenTests.length} test(s) likely broken`);
-  }
-  return parts.join(", ") || `${report.filesChanged} file(s) changed`;
-}
-
 function saveReportedIssues(projectRoot: string, issues: string[]): void {
   try {
     const issuePath = path.join(projectRoot, ".vibe-diff", "reported-issues.json");
@@ -238,6 +221,10 @@ function loadReportedIssues(projectRoot: string): string[] {
 
 function clearStaleSession(projectRoot: string, currentSessionId: string): void {
   try {
+    // Without a session id from the payload there is nothing to compare
+    // against. Clearing here would destroy the current session's changes.
+    if (!currentSessionId) return;
+
     const metaPath = path.join(projectRoot, ".vibe-diff", "session-meta.json");
     if (!fs.existsSync(metaPath)) return;
 
