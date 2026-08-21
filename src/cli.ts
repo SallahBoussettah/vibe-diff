@@ -127,7 +127,7 @@ function cmdInit(global: boolean): void {
       {
         matcher: "Edit|Write",
         hooks: [
-          { type: "command", command: `node ${hooksDir}/pre-tool-use.js`, timeout: 5 },
+          { type: "command", command: `node "${hooksDir}/pre-tool-use.js"`, timeout: 5 },
         ],
       },
     ],
@@ -135,14 +135,14 @@ function cmdInit(global: boolean): void {
       {
         matcher: "Edit|Write",
         hooks: [
-          { type: "command", command: `node ${hooksDir}/post-tool-use.js`, timeout: 10 },
+          { type: "command", command: `node "${hooksDir}/post-tool-use.js"`, timeout: 10 },
         ],
       },
     ],
     Stop: [
       {
         hooks: [
-          { type: "command", command: `node ${hooksDir}/stop.js`, timeout: 30 },
+          { type: "command", command: `node "${hooksDir}/stop.js"`, timeout: 30 },
         ],
       },
     ],
@@ -228,7 +228,7 @@ function cmdSetup(): void {
           "hooks": [
             {
               "type": "command",
-              "command": "node ${hooksDir}/pre-tool-use.js",
+              "command": "node \\"${hooksDir}/pre-tool-use.js\\"",
               "timeout": 5
             }
           ]
@@ -240,7 +240,7 @@ function cmdSetup(): void {
           "hooks": [
             {
               "type": "command",
-              "command": "node ${hooksDir}/post-tool-use.js",
+              "command": "node \\"${hooksDir}/post-tool-use.js\\"",
               "timeout": 10
             }
           ]
@@ -251,7 +251,7 @@ function cmdSetup(): void {
           "hooks": [
             {
               "type": "command",
-              "command": "node ${hooksDir}/stop.js",
+              "command": "node \\"${hooksDir}/stop.js\\"",
               "timeout": 30
             }
           ]
