@@ -152,4 +152,48 @@ export function testCategorizer(test: TestFn): void {
     const result = analyzeFile(change);
     assert.ok(result.behaviorChanges.some((b) => b.includes("ButtonProps")));
   });
+
+  test("analyzeFile: skips breaking change analysis for test files at any depth", () => {
+    // Paths are relative to the project root, so patterns anchored on a leading
+    // "/" missed top-level test directories and analysed them as source.
+    const testPaths = [
+      "tests/helper.ts",
+      "test/helper.ts",
+      "__tests__/helper.ts",
+      "src/tests/helper.ts",
+      "src/__tests__/helper.ts",
+      "src/api.test.ts",
+      "src/api.spec.ts",
+    ];
+
+    for (const filePath of testPaths) {
+      const change: FileChange = {
+        filePath,
+        oldContent: "export function helper(a) { return a; }\nexport function other(b) { return b; }",
+        newContent: "export function helper(a) { return a; }",
+        editType: "edit",
+        timestamp: Date.now(),
+      };
+      const result = analyzeFile(change);
+      const removed = result.exports.filter((e) => e.changeType === "removed");
+      assert.strictEqual(
+        removed.length,
+        0,
+        `${filePath} should be treated as a test file, not source`
+      );
+    }
+  });
+
+  test("analyzeFile: still analyzes real source files", () => {
+    const change: FileChange = {
+      filePath: "src/api.ts",
+      oldContent: "export function helper(a) { return a; }\nexport function other(b) { return b; }",
+      newContent: "export function helper(a) { return a; }",
+      editType: "edit",
+      timestamp: Date.now(),
+    };
+    const result = analyzeFile(change);
+    const removed = result.exports.filter((e) => e.changeType === "removed");
+    assert.strictEqual(removed.length, 1, "source files must still be analyzed");
+  });
 }
