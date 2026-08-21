@@ -21,8 +21,17 @@ function ensureStorageDir(projectRoot: string): void {
  * Append a change to the .jsonl file. Append-only to avoid race conditions
  * when multiple hooks fire in parallel.
  */
-export function addChange(projectRoot: string, change: FileChange): void {
+export function addChange(
+  projectRoot: string,
+  change: FileChange,
+  sessionId?: string
+): void {
   ensureStorageDir(projectRoot);
+
+  // Establish the session BEFORE appending. If this is a new Claude Code
+  // session, the previous session's changes are dropped first so they do not
+  // leak into this session's report.
+  startSession(projectRoot, sessionId);
 
   // Normalize path to forward slashes
   change.filePath = change.filePath.replace(/\\/g, "/");
@@ -30,15 +39,41 @@ export function addChange(projectRoot: string, change: FileChange): void {
   const changesPath = path.join(getStorageDir(projectRoot), CHANGES_FILE);
   const line = JSON.stringify(change) + "\n";
   fs.appendFileSync(changesPath, line);
+}
 
-  // Ensure session meta exists
+/**
+ * Record which session owns the stored changes.
+ *
+ * `sessionId` is Claude Code's real session id, taken from the hook payload.
+ * It must be stored verbatim: the Stop hook compares the stored id against the
+ * incoming payload to decide whether the data on disk is stale. Storing a
+ * locally generated id here makes that comparison always fail, which caused the
+ * Stop hook to wipe every session's changes before analysing them.
+ */
+function startSession(projectRoot: string, sessionId?: string): void {
   const metaPath = path.join(getStorageDir(projectRoot), SESSION_META);
-  if (!fs.existsSync(metaPath)) {
-    fs.writeFileSync(metaPath, JSON.stringify({
-      sessionId: generateSessionId(),
-      startTime: Date.now(),
-    }));
+
+  let existing: { sessionId?: string; startTime?: number } | null = null;
+  if (fs.existsSync(metaPath)) {
+    try {
+      existing = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
+    } catch {
+      existing = null;
+    }
   }
+
+  if (existing && existing.sessionId) {
+    // Same session, or no id available to compare against: keep accumulating.
+    if (!sessionId || existing.sessionId === sessionId) return;
+    // A different Claude session: drop the previous session's data.
+    clearSession(projectRoot);
+    ensureStorageDir(projectRoot);
+  }
+
+  fs.writeFileSync(metaPath, JSON.stringify({
+    sessionId: sessionId || generateSessionId(),
+    startTime: Date.now(),
+  }));
 }
 
 /**

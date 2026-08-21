@@ -1,6 +1,5 @@
 import * as path from "path";
 import {
-  FileChange,
   SemanticReport,
   AffectedDependent,
   AffectedTest,
@@ -101,7 +100,6 @@ export function generateReport(projectRoot: string): SemanticReport {
       : path.join(projectRoot, change.filePath);
 
     const tests = findRelatedTests(filePath, projectRoot);
-    const wasTestUpdated = changes.some((c) => tests.includes(c.filePath));
 
     for (const test of tests) {
       if (changes.some((c) => c.filePath === test || c.filePath.endsWith(test))) {

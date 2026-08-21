@@ -20,12 +20,15 @@ import * as path from "path";
 const MAX_FILE_LINES = 10000;
 
 // Test files are not public API -- skip breaking change analysis on them
+// Paths are relative to the project root, so a leading "/" is not present on
+// top-level directories. Anchoring with (^|/) matches both "tests/helper.ts"
+// and "src/tests/helper.ts".
 const TEST_PATTERNS = [
   /\.test\.\w+$/,
   /\.spec\.\w+$/,
-  /\/__tests__\//,
-  /\/test\//,
-  /\/tests\//,
+  /(^|\/)__tests__\//,
+  /(^|\/)test\//,
+  /(^|\/)tests\//,
 ];
 
 function isTestFile(filePath: string): boolean {

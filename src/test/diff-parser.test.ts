@@ -175,4 +175,39 @@ export function testDiffParser(test: TestFn): void {
     const fns = extractFunctions(code);
     assert.ok(fns.has("MyButton"), "should find React.FC component");
   });
+
+  test("extractFunctions: '<' comparison does not hide later class methods", () => {
+    // A "<" used as less-than was counted as an unclosed generic, which
+    // collapsed every following newline and hid class methods from the
+    // method-extraction pattern.
+    const code = [
+      "function check(a, b) { if (a < b) { return true; } return false; }",
+      "class Service {",
+      "  public getUser(id) { return 1; }",
+      "  public saveUser(u) { return 2; }",
+      "}",
+    ].join("\n");
+    const fns = extractFunctions(code);
+    assert.ok(fns.has("check"), "should find the plain function");
+    assert.ok(fns.has("getUser"), "should find getUser after a '<' comparison");
+    assert.ok(fns.has("saveUser"), "should find saveUser after a '<' comparison");
+  });
+
+  test("extractFunctions: multiple '<' comparisons still allow extraction", () => {
+    const code = [
+      "function a(x) { return x < 1; }",
+      "function b(y) { return y < 2; }",
+      "class Late {",
+      "  method(z) { return z; }",
+      "}",
+    ].join("\n");
+    const fns = extractFunctions(code);
+    assert.ok(fns.has("method"), "should still find methods after several comparisons");
+  });
+
+  test("extractFunctions: multi-line generic signature still collapses", () => {
+    const code = "export function pick<T>(\n  input: T,\n  key: string\n): T {\n  return input;\n}";
+    const fns = extractFunctions(code);
+    assert.ok(fns.has("pick"), "should still handle multi-line generic signatures");
+  });
 }

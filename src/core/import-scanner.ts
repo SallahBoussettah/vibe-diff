@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
-import { AffectedDependent, ExportChange, ImportInfo } from "../types";
+import { AffectedDependent, ExportChange } from "../types";
 
 const CODE_EXTENSIONS = [
   ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
@@ -71,9 +71,6 @@ export function findDependents(
   changedExports: ExportChange[]
 ): AffectedDependent[] {
   const dependents: AffectedDependent[] = [];
-  const changedRelative = path.relative(projectRoot, changedFile);
-  const changedBaseName = path.basename(changedFile, path.extname(changedFile));
-  const changedDir = path.dirname(changedFile);
 
   // Build patterns to search for
   const importPatterns = buildImportPatterns(changedFile, projectRoot);
@@ -118,7 +115,7 @@ export function findDependents(
 
     if (status !== "ok") {
       dependents.push({
-        filePath: path.relative(projectRoot, file),
+        filePath: toPosix(path.relative(projectRoot, file)),
         usesSymbols: importedNames,
         brokenSymbols,
         status,
@@ -134,8 +131,6 @@ function buildImportPatterns(changedFile: string, projectRoot: string): string[]
   const patterns: string[] = [];
   const ext = path.extname(changedFile);
   const baseName = path.basename(changedFile, ext);
-  const relFromRoot = path.relative(projectRoot, changedFile).replace(/\\/g, "/");
-  const relNoExt = relFromRoot.replace(/\.[^.]+$/, "");
 
   // Common import patterns for the changed file
   // ./filename, ../dir/filename
@@ -222,7 +217,7 @@ export function findRelatedTests(
 
   for (const testPath of testPatterns) {
     if (fs.existsSync(testPath)) {
-      tests.push(path.relative(projectRoot, testPath));
+      tests.push(toPosix(path.relative(projectRoot, testPath)));
     }
   }
 
@@ -234,13 +229,14 @@ export function findRelatedTests(
 
     const testFiles = walkFiles(fullTestDir);
     for (const testFile of testFiles) {
-      if (tests.includes(path.relative(projectRoot, testFile))) continue;
+      const relativeTestFile = toPosix(path.relative(projectRoot, testFile));
+      if (tests.includes(relativeTestFile)) continue;
 
       const content = readFileSafe(testFile);
       if (!content) continue;
 
       if (content.includes(baseName)) {
-        tests.push(path.relative(projectRoot, testFile));
+        tests.push(relativeTestFile);
       }
     }
   }
@@ -277,6 +273,15 @@ function walkFiles(dir: string, maxDepth = 5, _count = { n: 0 }): string[] {
   }
 
   return files;
+}
+
+/**
+ * Report paths with forward slashes on every platform, matching the paths the
+ * collector stores. Mixing separators makes reported paths inconsistent and
+ * breaks string comparison against collected changes on Windows.
+ */
+function toPosix(filePath: string): string {
+  return filePath.replace(/\\/g, "/");
 }
 
 function readFileSafe(filePath: string): string | null {

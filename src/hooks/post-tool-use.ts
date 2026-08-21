@@ -46,16 +46,20 @@ function handle(data: HookPayload): void {
     const toolInput = data.tool_input;
 
     if (toolName === "Edit") {
-      handleEdit(projectRoot, toolInput);
+      handleEdit(projectRoot, toolInput, data.session_id);
     } else if (toolName === "Write") {
-      handleWrite(projectRoot, toolInput);
+      handleWrite(projectRoot, toolInput, data.session_id);
     }
   } catch {
     process.exit(1);
   }
 }
 
-function handleEdit(projectRoot: string, input: Record<string, unknown>): void {
+function handleEdit(
+  projectRoot: string,
+  input: Record<string, unknown>,
+  sessionId?: string
+): void {
   const filePath = input.file_path as string;
   if (!filePath) return;
 
@@ -91,11 +95,15 @@ function handleEdit(projectRoot: string, input: Record<string, unknown>): void {
     timestamp: Date.now(),
   };
 
-  addChange(projectRoot, change);
+  addChange(projectRoot, change, sessionId);
   outputContext(projectRoot);
 }
 
-function handleWrite(projectRoot: string, input: Record<string, unknown>): void {
+function handleWrite(
+  projectRoot: string,
+  input: Record<string, unknown>,
+  sessionId?: string
+): void {
   const filePath = input.file_path as string;
   if (!filePath) return;
 
@@ -131,7 +139,7 @@ function handleWrite(projectRoot: string, input: Record<string, unknown>): void 
     timestamp: Date.now(),
   };
 
-  addChange(projectRoot, change);
+  addChange(projectRoot, change, sessionId);
   outputContext(projectRoot);
 }
 

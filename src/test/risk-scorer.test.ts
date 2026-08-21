@@ -1,6 +1,6 @@
 import * as assert from "assert";
 import { computeRisk } from "../core/risk-scorer";
-import { FileAnalysis, AffectedDependent, AffectedTest } from "../types";
+import { FileAnalysis, AffectedDependent } from "../types";
 
 type TestFn = (name: string, fn: () => void) => void;
 

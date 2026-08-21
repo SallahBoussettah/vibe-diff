@@ -9,6 +9,8 @@ import { testDiffParser } from "./diff-parser.test";
 import { testCategorizer } from "./categorizer.test";
 import { testRiskScorer } from "./risk-scorer.test";
 import { testCollector } from "./collector.test";
+import { testAnalyzer } from "./analyzer.test";
+import { testHooks } from "./hooks.test";
 
 let passed = 0;
 let failed = 0;
@@ -41,6 +43,12 @@ testRiskScorer(test);
 
 console.log("\ncollector:");
 testCollector(test);
+
+console.log("\nanalyzer:");
+testAnalyzer(test);
+
+console.log("\nhooks (end-to-end):");
+testHooks(test);
 
 console.log(`\n${passed + failed} tests, ${passed} passed, ${failed} failed\n`);
 
