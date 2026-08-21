@@ -100,8 +100,22 @@ function collapseParens(content: string): string {
     const ch = chars[i];
     if (ch === "(") depth++;
     else if (ch === ")") depth = Math.max(0, depth - 1);
-    else if (ch === "<") angleDepth++;
+    else if (ch === "<") {
+      // Only a "<" that directly follows an identifier, ">" or "]" opens a
+      // generic argument list (Array<T>, React.FC<Props>, Foo<Bar<T>>).
+      // A comparison such as "a < b" has a space before the "<". Counting one
+      // as a generic left angleDepth permanently above zero, which collapsed
+      // every remaining newline in the file and hid class methods from the
+      // method-extraction pattern.
+      const prev = chars[i - 1];
+      if (prev !== undefined && /[\w$>\]]/.test(prev)) angleDepth++;
+    }
     else if (ch === ">") angleDepth = Math.max(0, angleDepth - 1);
+    else if (ch === ";" || ch === "{" || ch === "}") {
+      // A generic argument list never spans a statement or block boundary, so
+      // an unclosed "<" cannot escape past one.
+      angleDepth = 0;
+    }
 
     // Inside parens or angle brackets, replace newlines with space
     if ((depth > 0 || angleDepth > 0) && (ch === "\n" || ch === "\r")) {
